@@ -1,0 +1,45 @@
+version: "3.8"
+
+services:
+  # BUG: healthcheck yok — diğer servisler DB hazır olmadan başlar
+  # BUG: volume yok — container silinince data kaybolur
+  # BUG: resource limit yok — memory/CPU sınırsız tüketebilir
+  # BUG: restart policy yok — crash olan servis geri gelmez
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: chaos
+      POSTGRES_PASSWORD: chaos123
+      POSTGRES_DB: chaosdb
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  api:
+    build: ./api
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+      - rabbitmq
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  worker:
+    build: ./worker
+    depends_on:
+      - db
+      - rabbitmq
+    environment:
+      - PYTHONUNBUFFERED=1

@@ -1,0 +1,116 @@
+# Lab 1 — order-svc v1 (başlangıç deployment'ı)
+# Bu manifest lab başında apply edilir → "stable v1" durumu.
+# Sonra `kubectl apply -f deploy-v2.yaml` ile rolling update başlatılır
+# (v1/v2 farkı env + label'a bağlı; salt `set image` yetmez — README Adım 2).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-svc
+  labels:
+    app: order-svc
+spec:
+  replicas: 3
+  # Rollback için son 5 revizyon saklanır (kubectl rollout history bunu gösterir)
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: order-svc
+  # Rolling update stratejisi: prod-safe ayar
+  #   maxSurge: 1        → tek seferde en fazla 1 fazla pod oluşturulur (3+1=4)
+  #   maxUnavailable: 0  → eski pod hiç düşmeden yenisi gelir (zero-downtime)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: order-svc
+        version: v1
+    spec:
+      containers:
+        - name: order-svc
+          image: order-svc:v1
+          imagePullPolicy: Never  # minikube/kind local image
+          ports:
+            - containerPort: 8001
+          env:
+            - name: APP_VERSION
+              value: "v1"
+            - name: PAYMENT_SVC_URL
+              value: "http://payment-svc:8002"
+            # v1'de cold start yok → hızlı ready olur
+            - name: STARTUP_DELAY_SECONDS
+              value: "0"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          # Liveness: process ayakta mı? Fail olursa pod restart edilir.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          # Readiness: trafiğe hazır mı? Fail olursa Service endpoint'ten çıkarılır.
+          # STARTUP_DELAY_SECONDS bitene kadar /ready 503 döner.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8001
+            initialDelaySeconds: 1
+            periodSeconds: 2
+            failureThreshold: 3
+---
+# payment-svc da Lab 1 için ayakta olmalı (order-svc onu çağırır)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-svc
+  labels:
+    app: payment-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-svc
+  template:
+    metadata:
+      labels:
+        app: payment-svc
+        version: v1
+    spec:
+      containers:
+        - name: payment-svc
+          image: payment-svc:v1
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8002
+          env:
+            - name: APP_VERSION
+              value: "v1"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8002
+            initialDelaySeconds: 1
+            periodSeconds: 2

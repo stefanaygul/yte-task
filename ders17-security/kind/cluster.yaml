@@ -1,0 +1,27 @@
+# Ders 17 Güvenlik Lab — kind cluster config.
+#
+# extraPortMappings: control-plane node'un 80/443 portu host'un 80/443'üne map
+# edilir. Böylece ingress-nginx'in NodePort'una doğrudan localhost:80 ile
+# ulaşırız. ingress-nginx'in kind variant'ı bu mapping'i bekler.
+#
+# Başka kind cluster'larıyla (ör. ders15-deploy) çakışmasın diye
+# ayrı bir cluster ismi: ders17-security.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: ders17-security
+
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP

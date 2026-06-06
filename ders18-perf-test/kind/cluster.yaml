@@ -1,0 +1,27 @@
+# Ders 18 Performans Testi Lab — kind cluster config.
+#
+# extraPortMappings: NodePort servislerini host portlarına bağlar ki k6 (host'ta
+# çalışan binary) ve tarayıcı doğrudan localhost ile erişsin:
+#
+#   localhost:8001   → order-svc NodePort 30801  (k6 buraya yük basar)
+#   localhost:30300  → Grafana NodePort 30300
+#   localhost:30900  → Prometheus NodePort 30900
+#
+# Ayrı cluster ismi (ders18-perf) → başka kind cluster'larıyla (ds15/ds17) çakışmaz.
+# Bu lab port 80/443 KULLANMAZ (ingress yok), o yüzden onları map etmedik.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: ders18-perf
+
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30801 # order-svc NodePort
+        hostPort: 8001
+        protocol: TCP
+      - containerPort: 30300 # Grafana NodePort
+        hostPort: 30300
+        protocol: TCP
+      - containerPort: 30900 # Prometheus NodePort
+        hostPort: 30900
+        protocol: TCP

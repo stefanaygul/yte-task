@@ -1,0 +1,36 @@
+# kind cluster konfigürasyonu — Ders 15 Deploy Strategies lab'ına ÖZEL
+#
+# Niye ayrı cluster?
+#   - Başka kind cluster'larıyla port/isim çakışmasını önler
+#   - Bu lab için temiz, izole bir ortam sağlar
+#
+# Önemli ayarlar:
+#   - extraPortMappings: kind container'ından host'a 80 + 443 port forward.
+#     Bu sayede ingress-nginx Service NodePort yerine doğrudan host'tan erişilebilir.
+#   - node-labels: "ingress-ready=true" → ingress-nginx kind variant'ı bu label'ı
+#     arar, controller'ı sadece bu node'a schedule eder (kind tek node).
+#
+# Sonuçta:
+#   http://gitea.localtest.me      → Gitea UI / git
+#   http://argocd.localtest.me     → ArgoCD UI (opsiyonel)
+#
+# (.localtest.me her zaman 127.0.0.1'e resolve olur — /etc/hosts gerekmez)
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: ders15-deploy
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.31.0
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP

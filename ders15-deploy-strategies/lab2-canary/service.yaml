@@ -1,0 +1,82 @@
+# Lab 2 — Service'ler
+#
+# Argo Rollouts "basic canary" modunda tek Service yeterli — controller pod
+# label'larını manipüle ederek replica sayılarını değiştirir, trafiği setWeight
+# yüzdesine göre dağıtır (yaklaşık olarak, replica sayısı oranıyla).
+#
+# Daha hassas trafik kontrolü için Istio/Nginx/SMI integration gerekir
+# (advanced canary). Bu lab'da basic mode kullanıyoruz — minikube'da extra
+# bağımlılık olmasın diye.
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-svc
+  labels:
+    app: order-svc
+spec:
+  type: ClusterIP
+  selector:
+    app: order-svc
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+---
+# payment-svc Lab 1'den kalmış olabilir; idempotent olsun diye burada da var
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-svc
+  labels:
+    app: payment-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-svc
+  template:
+    metadata:
+      labels:
+        app: payment-svc
+        version: v1
+    spec:
+      containers:
+        - name: payment-svc
+          image: payment-svc:v1
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8002
+          env:
+            - name: APP_VERSION
+              value: "v1"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8002
+            initialDelaySeconds: 1
+            periodSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-svc
+spec:
+  type: ClusterIP
+  selector:
+    app: payment-svc
+  ports:
+    - port: 8002
+      targetPort: 8002

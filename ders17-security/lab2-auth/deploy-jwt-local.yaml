@@ -1,0 +1,53 @@
+# Lab 2 — Adım 1: AUTH_MODE=jwt-local
+#
+# Her order-svc pod'u kendi içinde PyJWT ile token doğrular (HMAC256 verify).
+# /admin'e her gelen istek için CPU'da kripto çalışır.
+#
+# Bu sadece env var değişikliği — manifests/order-svc.yaml ile aynı deployment,
+# AUTH_MODE override.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-svc
+  labels:
+    app: order-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: order-svc
+  template:
+    metadata:
+      labels:
+        app: order-svc
+    spec:
+      containers:
+        - name: order-svc
+          image: order-svc:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8001
+          env:
+            - name: AUTH_MODE
+              value: "jwt-local"        # ← her pod kendi JWT'sini validate eder
+            - name: JWT_SECRET
+              value: "workshop-secret-key"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 15

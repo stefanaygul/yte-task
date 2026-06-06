@@ -1,0 +1,48 @@
+# Lab 3 — ArgoCD Application CRD
+#
+# Bu manifest cluster'a uygulanır → ArgoCD bunu görür, Gitea repo'sunu
+# izlemeye başlar.
+#
+# Workflow:
+#   1. Bu Application kurulduğunda ArgoCD Gitea repo'sunu clone eder
+#   2. manifests/ klasöründeki YAML'ları cluster'a apply eder
+#   3. Sonsuza kadar repo'yu izler (default 3 dakikada bir poll)
+#   4. Repo'da değişiklik = otomatik sync (automated mode)
+#   5. Cluster'da drift = otomatik düzelt (selfHeal)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: order-svc
+  namespace: argocd
+  # finalizer: Application silinince child kaynakları da silinsin
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    # Cluster-içi Gitea DNS — ArgoCD pod buraya bağlanır
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/workshop/manifests.git
+    targetRevision: HEAD       # her zaman main branch'in son commit'i
+    # ArgoCD bu path'te kustomization.yaml görür → Kustomize'i otomatik kullanır
+    # (plugin yapılandırması gerekmez)
+    path: overlays/workshop
+
+  destination:
+    server: https://kubernetes.default.svc  # bu cluster
+    namespace: default                       # hedef namespace
+
+  syncPolicy:
+    automated:
+      prune: true       # Git'te silinen kaynak → cluster'dan da silinir
+      selfHeal: true    # Elle yapılan değişiklik → ArgoCD geri alır
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

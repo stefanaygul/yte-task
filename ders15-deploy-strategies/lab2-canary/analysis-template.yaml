@@ -1,0 +1,52 @@
+# Lab 2 — Bonus: Otomatik canary abort (metrik bazlı)
+#
+# AnalysisTemplate canary sırasında periyodik bir kontrol çalıştırır.
+# Bu örnekte: order-svc v2'nin 5xx oranı %5'ten yüksekse → canary FAIL
+# (otomatik abort tetiklenir, manual müdahale gerekmez).
+#
+# NOT: Bu template Prometheus'a query atar. Workshop'ta Prometheus kurulu
+# değilse bu kısım demo amaçlı — gerçek değerlendirme yapılmaz, sadece
+# nasıl yazılacağı gösterilir.
+#
+# Kullanım: rollout.yaml'a aşağıdaki bloğu ekle:
+#
+#   spec:
+#     strategy:
+#       canary:
+#         steps:
+#           - setWeight: 10
+#           - pause: {duration: 30s}
+#           - analysis:
+#               templates:
+#                 - templateName: error-rate-check
+#               args:
+#                 - name: service-name
+#                   value: order-svc
+#           - setWeight: 30
+#           ...
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: error-rate-check
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: error-rate
+      # Her 30 saniyede bir ölç, toplam 3 ölçüm yap (90 saniye gözlem)
+      interval: 30s
+      count: 3
+      # Başarı kriteri: error_rate <= 0.05 (yani %5)
+      successCondition: result[0] <= 0.05
+      # 3 ölçümden 2'si başarısızsa canary abort
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(
+              order_requests_total{status=~"5..", version="v2"}[1m]
+            )) /
+            sum(rate(
+              order_requests_total{version="v2"}[1m]
+            ))

@@ -1,0 +1,33 @@
+# Workshop overlay — bu, "production'a deploy ettiğimiz somut konfigürasyon".
+#
+# Burası lab boyunca dokunacağımız tek dosya:
+#   • Image tag yükseltme        → images[].newTag
+#   • Scale up/down              → replicas[].count
+#   • Env override               → patches:
+#
+# `kubectl kustomize manifests/overlays/workshop/` ile local'de render edip
+# ArgoCD'nin cluster'a ne uygulayacağını önceden görebilirsiniz.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base'i import et
+resources:
+  - ../../base
+
+# Image tag'ini burada belirliyoruz — "deploy v1" demek bu satırlar demek
+images:
+  - name: order-svc
+    newTag: v2
+  - name: payment-svc
+    newTag: v2
+
+# Replica count override — base'de 1, overlay'de 3 / 2
+replicas:
+  - name: order-svc
+    count: 3
+  - name: payment-svc
+    count: 2
+
+# Tüm kaynaklara environment label ekle (gözlem için)
+commonLabels:
+  environment: workshop

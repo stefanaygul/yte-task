@@ -1,0 +1,79 @@
+# payment-svc deployment + service + ServiceMonitor — Ders 18 Performans Testi Lab
+#
+# order-svc'nin downstream'i. ClusterIP — dışarıdan erişim yok, sadece cluster içi.
+# SIMULATED_LATENCY_MS=20 → POST /orders zincirine 20ms ekler.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-svc
+  labels:
+    app: payment-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-svc
+  template:
+    metadata:
+      labels:
+        app: payment-svc
+    spec:
+      containers:
+        - name: payment-svc
+          image: payment-svc:latest
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8002
+          env:
+            - name: SIMULATED_LATENCY_MS
+              value: "20"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-svc
+  labels:
+    app: payment-svc
+spec:
+  type: ClusterIP
+  selector:
+    app: payment-svc
+  ports:
+    - name: http
+      port: 8002
+      targetPort: 8002
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: payment-svc
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: payment-svc
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 5s

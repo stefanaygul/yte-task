@@ -1,0 +1,31 @@
+# Lab 1 — Rate limit AÇIK.
+#
+# limit-rps: "5"             → IP başına saniyede ortalama 5 request
+# limit-burst-multiplier: "2" → kısa süreli burst = rps × 2 = 10 request
+#
+# NGINX leaky bucket algoritmasıyla çalışır:
+#   - Bucket'a saniyede 5 token eklenir
+#   - Burst sayesinde 10 token'a kadar birikebilir
+#   - Token yoksa istek reddedilir → default 503; cluster-wide ConfigMap'te
+#     `limit-req-status-code: "429"` ayarlandığı için bu workshop'ta 429 görürüz.
+#     (Bu bir ingress annotation DEĞİL — create-cluster.sh ConfigMap'e koyuyor.)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: security-lab
+  annotations:
+    nginx.ingress.kubernetes.io/enable-modsecurity: "false"
+    nginx.ingress.kubernetes.io/limit-rps: "5"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: order-svc
+                port:
+                  number: 8001

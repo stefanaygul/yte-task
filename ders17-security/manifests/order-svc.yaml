@@ -1,0 +1,66 @@
+# order-svc temel deployment + service — Ders 17 Güvenlik Lab
+#
+# Default AUTH_MODE=none → Lab 1 (rate limit) ve Lab 3 (WAF) bununla çalışır.
+# Lab 2'de bu manifest üzerine deploy-jwt-local.yaml / deploy-jwt-gateway.yaml
+# uygulanarak AUTH_MODE değiştirilir.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-svc
+  labels:
+    app: order-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: order-svc
+  template:
+    metadata:
+      labels:
+        app: order-svc
+    spec:
+      containers:
+        - name: order-svc
+          image: order-svc:latest
+          imagePullPolicy: Never  # kind/minikube'a load edilen image
+          ports:
+            - containerPort: 8001
+          env:
+            - name: AUTH_MODE
+              value: "none"
+            - name: JWT_SECRET
+              value: "workshop-secret-key"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-svc
+  labels:
+    app: order-svc
+spec:
+  type: ClusterIP
+  selector:
+    app: order-svc
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001

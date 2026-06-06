@@ -1,0 +1,12 @@
+# Base kustomization — "ham" template'leri toplar, hiçbir patch uygulamaz.
+# Overlay'ler bunu referans alır.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deployment.yaml
+  - service.yaml
+
+# Tüm kaynaklara ortak label ekle (best practice — gözlem ve cleanup için)
+commonLabels:
+  app.kubernetes.io/part-of: ders15-deploy-strategies

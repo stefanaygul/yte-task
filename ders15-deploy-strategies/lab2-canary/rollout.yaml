@@ -1,0 +1,76 @@
+# Lab 2 — Canary Deployment (Argo Rollouts)
+#
+# Standart `kind: Deployment` yerine `kind: Rollout` kullanıyoruz.
+# Argo Rollouts controller bu CRD'yi izler ve rollout'u step-by-step ilerletir.
+#
+# Strateji: Canary
+#   1. %10 trafik v2'ye → 30s bekle
+#   2. %30 trafik v2'ye → 30s bekle
+#   3. %60 trafik v2'ye → 30s bekle
+#   4. %100 trafik v2'ye
+#
+# Workshop için pause süresi 30s. Production'da bu dakikalar/saatler olur.
+# Manuel pause istersen `pause: {}` (süresiz) — `kubectl argo rollouts promote` ile devam.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: order-svc
+  labels:
+    app: order-svc
+spec:
+  replicas: 5  # %10 = ~0.5 pod hedeflenir; replica artırınca trafik dağılımı daha temiz
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: order-svc
+  strategy:
+    canary:
+      # maxSurge: yeni versiyon için ek pod sayısı
+      maxSurge: 1
+      maxUnavailable: 0
+      steps:
+        - setWeight: 10
+        - pause: {duration: 30s}
+        - setWeight: 30
+        - pause: {duration: 30s}
+        - setWeight: 60
+        - pause: {duration: 30s}
+        - setWeight: 100
+        # Son adımda otomatik promote
+  template:
+    metadata:
+      labels:
+        app: order-svc
+    spec:
+      containers:
+        - name: order-svc
+          image: order-svc:v1
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8001
+          env:
+            - name: APP_VERSION
+              value: "v1"
+            - name: PAYMENT_SVC_URL
+              value: "http://payment-svc:8002"
+            - name: STARTUP_DELAY_SECONDS
+              value: "0"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8001
+            initialDelaySeconds: 1
+            periodSeconds: 2

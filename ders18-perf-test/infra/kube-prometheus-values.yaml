@@ -1,0 +1,113 @@
+# kube-prometheus-stack Helm values — Ders 18 Performans Testi Lab
+#
+# Prometheus + Grafana + AlertManager. Bu lab'da iki iş yapar:
+#   1) order-svc / payment-svc custom metriklerini scrape eder (ServiceMonitor)
+#   2) k6, Prometheus remote-write ile test metriklerini buraya basabilir
+#      (enableRemoteWriteReceiver) → Grafana'da canlı k6 dashboard'u.
+#
+# kind için NodePort + cluster.yaml port mapping ile host'tan erişim:
+#   Grafana    → http://localhost:30300  (admin / workshop)
+#   Prometheus → http://localhost:30900
+
+fullnameOverride: monitoring
+
+# ---------------------------------------------------------------------------
+# Grafana
+# ---------------------------------------------------------------------------
+grafana:
+  adminPassword: "workshop"
+  service:
+    type: NodePort
+    nodePort: 30300
+  defaultDashboardsTimezone: browser
+
+  # Sidecar: label `grafana_dashboard=1` taşıyan ConfigMap'leri otomatik yükler.
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+    datasources:
+      enabled: true
+
+# ---------------------------------------------------------------------------
+# Prometheus
+# ---------------------------------------------------------------------------
+prometheus:
+  service:
+    type: NodePort
+    nodePort: 30900
+
+  prometheusSpec:
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    retention: 6h  # workshop için yeterli
+
+    # Selector'ları gevşet: ServiceMonitor'larımız label şartı olmadan toplansın.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+
+    # k6 → Prometheus remote-write için receiver aç (bonus: canlı k6 dashboard).
+    #   k6 run -o experimental-prometheus-rw \
+    #     -e BASE_URL=http://localhost:8001 k6-scripts/load-test.js
+    #   (K6_PROMETHEUS_RW_SERVER_URL=http://localhost:30900/api/v1/write)
+    enableRemoteWriteReceiver: true
+    enableFeatures:
+      - remote-write-receiver
+
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "300Mi"
+      limits:
+        cpu: "500m"
+        memory: "800Mi"
+
+# ---------------------------------------------------------------------------
+# AlertManager — bu lab'da kritik değil, sade tut
+# ---------------------------------------------------------------------------
+alertmanager:
+  service:
+    type: NodePort
+    nodePort: 30903
+  config:
+    global:
+      resolve_timeout: 1m
+    route:
+      group_by: ["alertname"]
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 5m
+      receiver: "null"
+    receivers:
+      - name: "null"
+
+# ---------------------------------------------------------------------------
+# Bileşenler — kubectl top / HPA için kube-state-metrics + node-exporter şart
+# ---------------------------------------------------------------------------
+nodeExporter:
+  enabled: true
+kube-state-metrics:
+  enabled: true
+prometheusOperator:
+  admissionWebhooks:
+    patch:
+      enabled: true
+defaultRules:
+  create: true
+  rules:
+    etcd: false
+    kubeApiserverAvailability: false
+    kubeApiserverBurnrate: false
+    kubeApiserverHistogram: false
+    kubeApiserverSlos: false
+    kubeProxy: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeControllerManager: false

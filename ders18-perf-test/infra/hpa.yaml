@@ -1,0 +1,51 @@
+# hpa.yaml — LAB 4: order-svc için HorizontalPodAutoscaler.
+#
+# Kapasite planı: Lab 2'de "1 pod ≈ N RPS @ SLO" bulduk. Hedef RPS'i karşılamak
+# için pod sayısını CPU kullanımına göre otomatik ayarlıyoruz.
+#
+# target CPU %60: pod'un CPU kullanımı request'in %60'ını (100m × 0.6 = 60m)
+# aşınca HPA scale-up yapar. %60 seçimi bilinçli — %90 beklersen scale gecikir,
+# müşteri latency yer; %60 baş payı (headroom) bırakır.
+#
+# min=2 (her zaman 2 pod hazır, HA), max=8 (maliyet tavanı).
+#
+# Apply:  kubectl apply -f infra/hpa.yaml
+# İzle:   kubectl get hpa -w
+#
+# GEREKSİNİM: metrics-server kurulu olmalı (create-cluster.sh kuruyor),
+# yoksa HPA "unknown" target gösterir ve scale etmez.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: order-svc
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: order-svc
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+  # behavior: scale-up/down hızını kontrol eder. Default'lar workshop için kabaca:
+  #  - scale-up: agresif (yükü hızla karşıla)
+  #  - scale-down: muhafazakâr (flap'i önle, 5dk pencere)
+  # Workshop'ta scale-down'ı görebilmek için pencereyi kısalttık.
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0 # yük gelince hemen scale et
+      policies:
+        - type: Percent
+          value: 100 # gerekirse pod sayısını bir adımda 2 katına çıkar
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 60 # yük düşünce 60sn bekle, sonra küçül
+      policies:
+        - type: Pods
+          value: 1 # her seferinde en fazla 1 pod azalt
+          periodSeconds: 30

@@ -1,0 +1,33 @@
+# Gitea ingress
+#
+# kind cluster'da extraPortMappings ile 80 portu host'a maple → openssl/curl/git
+# komutları doğrudan http://gitea.localtest.me'ye konuşur, port-forward gerekmez.
+#
+# .localtest.me wildcard her zaman 127.0.0.1'e resolve olur (DNS hilesi),
+# /etc/hosts düzenlemek gerekmez.
+#
+# Erişim örnekleri:
+#   tarayıcı: http://gitea.localtest.me
+#   git:      git clone http://workshop:workshop123@gitea.localtest.me/workshop/manifests.git
+#   ArgoCD pod (cluster-içi):  http://gitea-http.gitea.svc.cluster.local:3000  (DEĞİŞMEZ)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gitea
+  namespace: gitea
+  annotations:
+    # git push büyük diff'lerde body limit'i aşabilir → 50MB
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: gitea.localtest.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gitea-http
+                port:
+                  number: 3000

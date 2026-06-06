@@ -1,0 +1,57 @@
+# payment-svc temel deployment + service — Ders 17 Güvenlik Lab
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-svc
+  labels:
+    app: payment-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-svc
+  template:
+    metadata:
+      labels:
+        app: payment-svc
+    spec:
+      containers:
+        - name: payment-svc
+          image: payment-svc:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8002
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-svc
+  labels:
+    app: payment-svc
+spec:
+  type: ClusterIP
+  selector:
+    app: payment-svc
+  ports:
+    - name: http
+      port: 8002
+      targetPort: 8002

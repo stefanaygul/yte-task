@@ -1,0 +1,21 @@
+# Lab 1 — Başlangıç: rate limit YOK.
+# Tüm trafik order-svc'ye geçer. Loadtest sonucu 100/100 başarı bekleriz.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: security-lab
+  annotations:
+    # WAF de devre dışı (Lab 1 odağı sadece rate limit)
+    nginx.ingress.kubernetes.io/enable-modsecurity: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: order-svc
+                port:
+                  number: 8001

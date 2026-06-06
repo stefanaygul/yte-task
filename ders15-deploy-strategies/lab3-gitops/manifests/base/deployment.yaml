@@ -1,0 +1,105 @@
+# Base deployment — Kustomize tarafından "template" olarak kullanılır.
+#
+# Dikkat:
+#   - image: order-svc / payment-svc → tag YOK
+#     Tag'i overlay'deki kustomization.yaml `images:` bloğu ekler.
+#     Bu sayede "v1 → v2 yükseltme" = kustomization.yaml'da tek satır diff.
+#
+#   - replicas: 1 → overlay bunu artırır (production'da 3, dev'de 1 gibi)
+#
+#   - Hiçbir env var burada yok → overlay'de configMapGenerator ile eklenebilir
+#     (bu lab'da kullanmıyoruz, ama gerçek pattern bu)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-svc
+  labels:
+    app: order-svc
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: order-svc
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: order-svc
+    spec:
+      containers:
+        - name: order-svc
+          image: order-svc          # tag overlay'de
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8001
+          env:
+            - name: PAYMENT_SVC_URL
+              value: "http://payment-svc:8002"
+            - name: STARTUP_DELAY_SECONDS
+              value: "0"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8001
+            initialDelaySeconds: 1
+            periodSeconds: 2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-svc
+  labels:
+    app: payment-svc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-svc
+  template:
+    metadata:
+      labels:
+        app: payment-svc
+    spec:
+      containers:
+        - name: payment-svc
+          image: payment-svc        # tag overlay'de
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8002
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8002
+            initialDelaySeconds: 1
+            periodSeconds: 2

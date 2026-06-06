@@ -1,0 +1,191 @@
+# Gitea — In-cluster git server (Lab 3 GitOps için)
+#
+# Neden Gitea?
+#   - GitHub'a benzer web UI (commit'leri görsel olarak görebilirsin)
+#   - Lightweight (~100MB image, sqlite default)
+#   - Tek manifest ile kurulur, dış bağımlılık yok
+#
+# Bu manifest:
+#   - Namespace: gitea
+#   - PVC: 1Gi (commit'ler restart sonrası kaybolmasın)
+#   - ConfigMap: app.ini override'ları (ilk açılışta web installer'ı atla)
+#   - Deployment: gitea/gitea:1.22 single-replica
+#   - Service: ClusterIP 3000 (cluster içi) + NodePort 30300 (host'tan UI)
+#
+# Erişim:
+#   - Cluster içi: http://gitea-http.gitea.svc.cluster.local:3000
+#   - Host'tan UI: http://$(minikube ip):30300
+#   - Ya da: kubectl port-forward -n gitea svc/gitea-http 3000:3000
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitea
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-data
+  namespace: gitea
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Gitea ilk açılışta web installer ister. Bunu atlamak için app.ini'yi
+# önceden hazırlayıp ConfigMap olarak mount ediyoruz.
+# INSTALL_LOCK=true → installer'ı kilitler, direkt login ekranına gider.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitea-config
+  namespace: gitea
+data:
+  app.ini: |
+    APP_NAME = Workshop Gitea
+    RUN_MODE = prod
+    RUN_USER = git
+
+    [server]
+    PROTOCOL          = http
+    # DOMAIN ve ROOT_URL UI'da gösterilen "clone URL" için kullanılır.
+    # Ingress üzerinden gelen kullanıcı doğru URL'yi görür.
+    # ArgoCD cluster-içi DNS ile direkt Service'e bağlanır → ROOT_URL'i etkilemez.
+    DOMAIN            = gitea.localtest.me
+    ROOT_URL          = http://gitea.localtest.me/
+    HTTP_PORT         = 3000
+    DISABLE_SSH       = true
+    OFFLINE_MODE      = true
+    LANDING_PAGE      = explore
+
+    [database]
+    DB_TYPE = sqlite3
+    PATH    = /data/gitea/gitea.db
+
+    [security]
+    INSTALL_LOCK   = true
+    SECRET_KEY     = workshop-only-not-secret
+    INTERNAL_TOKEN = workshop-internal-token
+
+    [service]
+    DISABLE_REGISTRATION              = false
+    REQUIRE_SIGNIN_VIEW               = false
+    REGISTER_EMAIL_CONFIRM            = false
+    ENABLE_NOTIFY_MAIL                = false
+    DEFAULT_ALLOW_CREATE_ORGANIZATION = true
+
+    [repository]
+    DEFAULT_BRANCH = main
+
+    [log]
+    MODE  = console
+    LEVEL = warn
+
+    [oauth2]
+    ENABLED = false
+    JWT_SECRET = workshop-jwt-secret-not-real
+
+    [session]
+    PROVIDER = memory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  namespace: gitea
+  labels:
+    app: gitea
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # PVC ReadWriteOnce — rolling update mümkün değil
+  selector:
+    matchLabels:
+      app: gitea
+  template:
+    metadata:
+      labels:
+        app: gitea
+    spec:
+      securityContext:
+        fsGroup: 1000
+      # initContainer: ConfigMap'i yazılabilir PVC'ye kopyalar.
+      # Gitea, oauth2 JWT_SECRET vb. değerleri runtime'da app.ini'ye yazmaya
+      # çalışır → ConfigMap mount read-only olduğu için doğrudan kullanılamaz.
+      initContainers:
+        - name: init-config
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /data/gitea/conf
+              cp /tmp/config-source/app.ini /data/gitea/conf/app.ini
+              chown -R 1000:1000 /data
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config-source
+              mountPath: /tmp/config-source
+      containers:
+        - name: gitea
+          image: gitea/gitea:1.22
+          imagePullPolicy: IfNotPresent  # public image, pull edilebilir
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: USER_UID
+              value: "1000"
+            - name: USER_GID
+              value: "1000"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          # Gitea ilk başlangıçta DB migration yapar; readiness için cömert ol
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: 3000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: gitea-data
+        - name: config-source
+          configMap:
+            name: gitea-config
+---
+# Cluster-içi erişim (ArgoCD ve diğer pod'lar buraya bağlanır)
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea-http
+  namespace: gitea
+spec:
+  type: ClusterIP
+  selector:
+    app: gitea
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+---
+# Host'tan erişim: Ingress (ingress.yaml) — http://gitea.localtest.me
+# NodePort kaldırıldı (ingress varken gereksiz).

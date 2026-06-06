@@ -1,0 +1,71 @@
+# Lab 1 — order-svc v2 (SORUNLU versiyon)
+#
+# v2'ye `kubectl apply -f deploy-v2.yaml` ile geçilir. Salt `kubectl set image ... :v2`
+# YETMEZ: aşağıdaki fark image tag'ine değil env var + label'a bağlı; set image bunları
+# değiştirmez, pod v1 gibi davranır ve version=v2 label'ı oluşmaz (bkz. README Adım 2).
+#
+# v1'den FARK:
+#   - image: order-svc:v2
+#   - STARTUP_DELAY_SECONDS=10  → cold start simülasyonu
+#       Sonuç: readinessProbe ~10s boyunca 503 döner, pod READY=0/1 kalır,
+#       maxUnavailable=0 olduğu için rolling update YAVAŞLAR (her pod 10+s sürer).
+#   - APP_VERSION=v2            → /orders response'unda "discount" alanı eklenir
+#       (breaking change simülasyonu — v1 client'lar bu alanı bilmez)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-svc
+  labels:
+    app: order-svc
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: order-svc
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: order-svc
+        version: v2
+    spec:
+      containers:
+        - name: order-svc
+          image: order-svc:v2
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8001
+          env:
+            - name: APP_VERSION
+              value: "v2"
+            - name: PAYMENT_SVC_URL
+              value: "http://payment-svc:8002"
+            # 👇 Sorunun kaynağı: 10 saniye boyunca pod ready olmayacak
+            - name: STARTUP_DELAY_SECONDS
+              value: "10"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8001
+            initialDelaySeconds: 1
+            periodSeconds: 2
+            failureThreshold: 3

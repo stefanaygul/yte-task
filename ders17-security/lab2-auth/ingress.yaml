@@ -1,0 +1,19 @@
+# Lab 2 için ingress — sade routing, rate limit ve WAF yok.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: security-lab
+  annotations:
+    nginx.ingress.kubernetes.io/enable-modsecurity: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: order-svc
+                port:
+                  number: 8001
